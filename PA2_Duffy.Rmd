@@ -4,15 +4,25 @@ author: "Stephen Duffy"
 date: "January 27, 2016"
 output: html_document
 ---
-
-##The Impacts of Storms on Human Acitvity
-
+##Synopsis
 
 
 
+##Data Processing
+
+
+
+##Results
+
+
+###The Impacts of Storms on Human Acitvity
 
 
 
 
 
-##The Impacts of Storms on Economic Activity
+
+
+
+
+###The Impacts of Storms on Economic Activity
