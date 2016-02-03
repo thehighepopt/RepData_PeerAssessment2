@@ -47,51 +47,67 @@ propmult <- ifelse(noaa_data$PROPDMGEXP == 'M', 1000000,
 noaa_data$PROPDMGNUMBER <- noaa_data$PROPDMG * propmult
 
 
+
 cropmult <- ifelse(noaa_data$CROPDMGEXP == 'M', 1000000, 
                   ifelse(noaa_data$CROPDMGEXP == "B", 1000000000, 
                         ifelse(noaa_data$CROPDMGEXP == "H", 100, 
                               1000)))
 noaa_data$CROPDMGNUMBER <- noaa_data$CROPDMG * cropmult
 
-cropexpcount <- count(!is.na(noaa_data), "CROPDMGEXP")
-propexpcount <- count(noaa_data, "PROPDMGEXP")
+cropexpcount <- noaa_data %>% count(CROPDMGEXP, sort = TRUE)    ##count(!is.na(noaa_data), "CROPDMGEXP")
+propexpcount <- noaa_data %>% count(PROPDMGEXP, sort = TRUE)
 cropexpcount$Pct <- round(cropexpcount[,2] / sum(cropexpcount[2:7,2]),3)
 propexpcount$Pct <- round(propexpcount[,2] / sum(propexpcount[2:17,2]),3)
 
-cropexpcount
-propexpcount
+crop_k <- as.data.frame(cropexpcount)[2,c(1,3)]
+prop_k <- as.data.frame(propexpcount)[2,c(1,3)]
 
 ##Across the United States, which types of events (as indicated in the EVTYPE variable) 
 ##are most harmful with respect to population health?
 
 pop_health <- noaa_data[,c(8,23,24)] %>% 
                 group_by(EVTYPE) %>% 
-                summarise_each(funs(sum))
+                summarise_each(funs(sum)) 
 
-pop_health[,2] <- round(pop_health[,2],3)
-pop_health[,3] <- round(pop_health[,3],3)
+pop_health$TOTHARM <- pop_health$FATALITIES + pop_health$INJURIES
 
-pop_health$TOTINJFATAL <- pop_health$FATALITIES + pop_health$INJURIES
-         
-##max_fatality <- pop_health[which(pop_health[,2] == max(pop_health[,2])),1]
-##max_injuries <- pop_health[which(pop_health[,3] == max(pop_health[,3])),1]
-##max_combined <- pop_health[which(pop_health[,4] == max(pop_health[,4])),1]
 
 max_fatal <- arrange(pop_health, desc(FATALITIES))[1,1:2]
 max_injury <- arrange(pop_health, desc(INJURIES))[1,c(1,3)]
-max_comb <- arrange(pop_health, desc(TOTINJFATAL))[1,c(1,4)]
+max_comb <- arrange(pop_health, desc(TOTHARM))[1,c(1,4)]
 
-second_place <- arrange(pop_health, desc(TOTINJFATAL))[2,c(1,4)]
+next_five_harm <- arrange(pop_health, desc(TOTHARM))[2:6,c(1,4)]
 
-pop_health_st <- noaa_data[,c(7,8,23,24)] %>% 
-    group_by(STATE,EVTYPE) %>% 
-    summarise_each(funs(sum))
+##make a plot of injuries and fatalities by year
+noaa_data$YEAR <- format(noaa_data$BGN_DATE,'%Y')
+pop_health_yr <- noaa_data[,c(40,23,24)] %>% 
+    group_by(YEAR) %>% 
+    summarise_each(funs(sum)) 
 
-
-
+melt_pop <- melt(pop_health_yr, id.vars = "YEAR")
+melt_pop[,1] <- as.numeric(as.character(melt_pop[,1]))
+ggplot(data = melt_pop, aes(x=YEAR,y=value)) +
+       geom_path(aes(colour = variable))
 
 ##Across the United States, which types of events have the greatest economic consequences?
+econ_dmg <- noaa_data[,c(8,38,39)] %>% 
+    group_by(EVTYPE) %>% 
+    summarise_each(funs(sum))
+    
+econ_dmg$TOTDAMAGE <- econ_dmg$PROPDMGNUMBER + econ_dmg$CROPDMGNUMBER
 
+max_property <- arrange(econ_dmg, desc(PROPDMGNUMBER))[1,1:2]
+max_crop <- arrange(econ_dmg, desc(CROPDMGNUMBER))[1,c(1,3)]
+max_totdmg <- arrange(econ_dmg, desc(TOTDAMAGE))[1,c(1,4)]
 
+next_five_dmg <- arrange(econ_dmg, desc(TOTDAMAGE))[2:6,c(1,4)]
 
+econ_dmg_st <- noaa_data[,c(7,38,39)] %>% 
+    group_by(STATE) %>% 
+    summarise_each(funs(sum))
 
+econ_dmg_st$TOTAL <- (econ_dmg_st$PROPDMGNUMBER + econ_dmg_st$CROPDMGNUMBER)
+econ_dmg_st <- arrange(econ_dmg_st[,c(1,4)],desc(TOTAL))[1:10,]
+
+barplot(econ_dmg_st$TOTAL, names.arg = econ_dmg_st$STATE, ylab = "Total Damage", main = 
+            "Total Damage Top 10 States")

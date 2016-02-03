@@ -1,28 +1,237 @@
 ---
-title: "An Analysis of NOAA Storm Data to Determine Impacts of Storms to Human and Economic Activity"
+title: An Analysis of NOAA Storm Data to Determine Impacts of Storms to Human and
+  Economic Activity
 author: "Stephen Duffy"
 date: "January 27, 2016"
-output: html_document
+output: pdf_document
 ---
+
 ##Synopsis
 
+Storms affect people and property across the US every year.  Since the 1950s, the highest toll
+to human activity has been caused by tornados, causing more fatalities and injuries than any
+other weather event.  
+
+In terms of economic damages, flooding causes the most property damage and drought causes the
+most damage to crops.  However, when the two values are combined, flooding far outweighs any
+other weather activities for economic costliness.  
+
+The following provides a view into the methodology and outcomes of this analysis.
 
 
 ##Data Processing
 
+First load needed libraries and then read the data file into R
+```{r readdata}
+##First, load needed libraries
+library(plyr)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+options(scipen=999)
+
+##This code looks for the zipped file in your working directory and downloads it if not present
+if (!file.exists("repdata-data-StormData.csv.bz2")) {
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",
+                  destfile = "repdata-data-StormData.csv.bz2")}
+
+##read.csv can read .bz2 files directly, this will take some time.
+noaa_data <- read.csv("repdata-data-StormData.csv.bz2")
+
+##and a quick view of the data
+str(noaa_data)
+```
+
+Then perform some cleanup of the data, such as trimming leading and trailing blanks spaces,
+capitalizing columns for matching, and converting values.
+
+```{r cleandata}
+##Trim leading and trailing blank spaces in columns we will use
+trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+noaa_data$EVTYPE <- trim(noaa_data$EVTYPE)
+noaa_data$STATE <- trim(noaa_data$STATE)
+noaa_data$PROPDMGEXP <- trim(noaa_data$PROPDMGEXP)
+noaa_data$CROPDMGEXP <- trim(noaa_data$CROPDMGEXP)
+
+##Capitalize some messy columns we need to use
+noaa_data$PROPDMGEXP <- toupper(noaa_data$PROPDMGEXP)
+noaa_data$CROPDMGEXP <- toupper(noaa_data$CROPDMGEXP)
+
+##Convert factors to dates
+noaa_data$BGN_DATE <- as.Date(noaa_data$BGN_DATE,format = "%m/%d/%Y %H:%M:%S")
+noaa_data$END_DATE <- as.Date(noaa_data$END_DATE,format = "%m/%d/%Y %H:%M:%S")
+```
+
+The NOAA data has damages to crops and property separated into two columns. The first is a
+numeric value and the second is an exponent, such as "K" or "M".  This analysis needs actual
+numbers and so the numeric value will be multiplied by the exponent value to get an actual
+value, e.g., H = 100, K = 1000, etc.  What's more, there are other characters in the exponent
+column, such as numbers, plus signs, and dashes.  For any row that has a value higher than 0 in 
+the numeric column, but a non-obvious exponent, I purport to multiply that by 1000, as 97-99
+percent of the exponents are "K", that is 1,000.
+
+```{r}
+##This is the justification for using a 1,000 multiplier
+cropexpcount <- noaa_data %>% count(CROPDMGEXP, sort = TRUE)    
+propexpcount <- noaa_data %>% count(PROPDMGEXP, sort = TRUE)
+cropexpcount$Pct <- round(cropexpcount[,2] / sum(cropexpcount[2:7,2]),3)
+propexpcount$Pct <- round(propexpcount[,2] / sum(propexpcount[2:17,2]),3)
+
+crop_perc <- as.data.frame(cropexpcount)
+prop_perc <- as.data.frame(propexpcount)
+
+crop_k <- as.data.frame(cropexpcount)[2,3] * 100
+prop_k <- as.data.frame(propexpcount)[2,3] * 100
+```
+
+You can see the value of "K" has `r prop_k`% of exponent values in the property 
+damage column and it has a value of `r crop_k`% in the crop damage column.
+
+
+Next, create new columns that have actual numeric values based on the number and exponent
+
+```{r actualvalue}
+propmult <- ifelse(noaa_data$PROPDMGEXP == 'M', 1000000, 
+                  ifelse(noaa_data$PROPDMGEXP == "B", 1000000000, 
+                        ifelse(noaa_data$PROPDMGEXP == "H", 100, 
+                               1000)))
+noaa_data$PROPDMGNUMBER <- noaa_data$PROPDMG * propmult
+
+
+
+cropmult <- ifelse(noaa_data$CROPDMGEXP == 'M', 1000000, 
+                  ifelse(noaa_data$CROPDMGEXP == "B", 1000000000, 
+                        ifelse(noaa_data$CROPDMGEXP == "H", 100, 
+                              1000)))
+noaa_data$CROPDMGNUMBER <- noaa_data$CROPDMG * cropmult
+
+##There are two new columns at the end with full values
+str(noaa_data)
+```
+
+
+There are now two new columns with full numeric values at the end
 
 
 ##Results
 
 
-###The Impacts of Storms on Human Acitvity
+###The Impacts of Storms on Human Activity
+
+To determine the impacts of storms on human activity, first group the data by event type and 
+sum totalinjuries and total fatalities, then create a new column that is the sum of both.
+
+```{r human}
+
+pop_health <- noaa_data[,c(8,23,24)] %>% 
+                group_by(EVTYPE) %>% 
+                summarise_each(funs(sum)) 
+
+pop_health$TOTALHARM <- pop_health$FATALITIES + pop_health$INJURIES
 
 
+max_fatal <- arrange(pop_health, desc(FATALITIES))[1,1:2]
+max_injury <- arrange(pop_health, desc(INJURIES))[1,c(1,3)]
+max_comb <- arrange(pop_health, desc(TOTALHARM))[1,c(1,4)]
+
+```
+
+With the data ready, it is possible to determine what event is costliest to human life in 
+terms of: 
+
+Fatalities:   `r max_fatal` people.
+ 
+Injuries:     `r max_injury` people.
+
+Combined:     `r max_comb` people.
 
 
+The next five events that are costliest to human life are as follows:
+
+```{r nextfivepop}
+next_five_pop <- arrange(pop_health, desc(TOTALHARM))[2:6,c(1,4)]
+
+next_five_pop
+```
 
 
+Finally, this is a view of total injuries and fatalities per year due to tornados
 
+```{r yearplot}
+##make a plot of injuries and fatalities by year
+noaa_data$YEAR <- format(noaa_data$BGN_DATE,'%Y')
+pop_health_yr <- subset(noaa_data, EVTYPE == "TORNADO")[,c(40,23,24)] %>% 
+    group_by(YEAR) %>% 
+    summarise_each(funs(sum)) 
+
+melt_pop <- melt(pop_health_yr, id.vars = "YEAR")
+melt_pop[,1] <- as.numeric(as.character(melt_pop[,1]))
+ggplot(data = melt_pop, aes(x=YEAR,y=value)) +
+       geom_path(aes(colour = variable)) +
+       ggtitle("Total Human Impact from Tornados, 1950 - 2011") +
+       ylab("COUNT")
+```
+
+From the graph you can see that in recent years fatalities and injuries from tornados have
+been trending downward but in the last year there was a large increase.
 
 
 ###The Impacts of Storms on Economic Activity
+
+To determine the impacts of storms on human activity, follow the same steps as before but instead
+of using injuries and fatalities use the two columns of numeric damage values created earlier.
+
+```{r economic}
+econ_dmg <- noaa_data[,c(8,38,39)] %>% 
+    group_by(EVTYPE) %>% 
+    summarise_each(funs(sum))
+    
+econ_dmg$TOTDAMAGE <- econ_dmg$PROPDMGNUMBER + econ_dmg$CROPDMGNUMBER
+
+max_property <- arrange(econ_dmg, desc(PROPDMGNUMBER))[1,1:2]
+max_crop <- arrange(econ_dmg, desc(CROPDMGNUMBER))[1,c(1,3)]
+max_totdmg <- arrange(econ_dmg, desc(TOTDAMAGE))[1,c(1,4)]
+
+```
+
+Crops and property tend to have different events that create the most damage.
+
+The event that causes the most damage to property is `r max_property[1,1]` and the amount of 
+damage cause by it is $`r prettyNum(max_property[1,2],big.mark=",",scientific=FALSE)`.
+ 
+The event that causes the most damage to crops is `r max_crop[1,1]` and the amount of 
+damage cause by it is $`r prettyNum(max_crop[1,2],big.mark=",",scientific=FALSE)`.
+
+Finally, the event that causes the most damage overall, to both property and crops combined
+is `r max_totdmg[1,1]` and the amount of damage cause by it is 
+$`r prettyNum(max_totdmg[1,2],big.mark=",",scientific=FALSE)`.
+
+
+The next five most damaging events are as follows:
+```{r nextfive}
+next_five_dmg <- arrange(econ_dmg, desc(TOTDAMAGE))[2:6,c(1,4)]
+
+next_five_dmg
+```
+
+
+Lastly, in terms of total damage not all states in the US are equal.  The barplot below shows
+total damages to crops and property by state, for the top ten states with damage.  California
+is the clear leader in damages, likely due to high property values in areas with wild fires,
+mud slides, and earthquakes, as well as having large amounts of farm land in a drough-prone
+area of the country.
+
+```{r toptenstates}
+econ_dmg_st <- noaa_data[,c(7,38,39)] %>% 
+    group_by(STATE) %>% 
+    summarise_each(funs(sum))
+
+econ_dmg_st$TOTAL <- (econ_dmg_st$PROPDMGNUMBER + econ_dmg_st$CROPDMGNUMBER)
+econ_dmg_st <- arrange(econ_dmg_st[,c(1,4)],desc(TOTAL))[1:10,]
+
+barplot(econ_dmg_st$TOTAL, names.arg = econ_dmg_st$STATE, ylab = "Total Damage", main = 
+            "Total Damage Top 10 States")
+```
+
+
+
